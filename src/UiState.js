@@ -1,4 +1,4 @@
-import {observable, action} from 'mobx';
+import { observable, action } from 'mobx'
 import CognitoUserPool from './CognitoUserPool'
 import { AuthenticationDetails, CognitoUser } from 'amazon-cognito-identity-js'
 
@@ -17,33 +17,35 @@ class UiState {
 
   loginFromLocalStorage = action('loginFromLocalStorage', () => {
     let cognitoUser = CognitoUserPool.getCurrentUser();
-    let unsetLoading = this.setLoading('login', 'Logging in from local storage');
-    this.setUserInfo(cognitoUser);
-
-    if (!this.user) {
-      unsetLoading();
+    if (!cognitoUser) {
       return;
     }
 
-    this.user.getSession((err, session) => {
-      if (err) {
-        console.log('unable to getSession, logging out');
-        this.logout();
-      } else {
-        console.log('session validity: ' + session.isValid());
-      }
-      unsetLoading();
+    let unsetLoading = this.setLoading('login', 'Logging in from local storage');
+
+    let getSession = new Promise((res, rej) => {
+      cognitoUser.getSession((e, data) => e ? rej(e) : res(data))
     });
-    this.user.getUserAttributes((err, result) => {
-      if (err) {
-        console.log('unable to getUserAttributes, logging out');
-        this.logout();
-      } else {
-        for (let i = 0; i < result.length; i++) {
-          this.userAttributes.set(result[i].getName(), result[i].getValue());
+
+    let getUserAttributes = new Promise((res, rej) => {
+      cognitoUser.getUserAttributes((e, data) => e ? rej(e) : res(data))
+    });
+
+    Promise
+      .all([getSession, getUserAttributes])
+      .then(results => {
+        this.setUserInfo(cognitoUser);
+        let [session, attrs] = results;
+        this.session = session;
+        for (let i = 0; i < attrs.length; i++) {
+          this.userAttributes.set(attrs[i].getName(), attrs[i].getValue());
         }
-      }
-    });
+      })
+      .catch(err => {
+        this.logout();
+      }).then(() => {
+        unsetLoading();
+      });
   })
 
   login = action('login', (username, password, callbacks) => {
